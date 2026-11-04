@@ -1,0 +1,39 @@
+# Node
+node_modules/
+dist/
+build/
+playwright-report/
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-1/
+venv/
+
+# Environment variables and local data
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.pytest_cache/
+.pytest_cache/
+*.db
+*.sqlite
+*.sqlite3
+*.tsbuildinfo
+
+vite.config.d.ts
+
+
+# Editor and OS
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+!package-lock.json
+!frontend/package-lock.json
+!BrandGuard-AI/package-lock.json
