@@ -1,5 +1,10 @@
+import { useEffect, useState } from "react";
 import { AppIcon, type IconName } from "../components/AppIcon";
 import { PageHeader } from "../components/PageHeader";
+import {
+  getDashboardGreeting,
+  getMillisecondsUntilGreetingChanges,
+} from "../lib/dashboardGreeting";
 import type {
   AppPage,
   BrandGuideline,
@@ -50,6 +55,7 @@ export function DashboardPage({
   onNavigate,
   onOpenReview,
 }: DashboardPageProps) {
+  const [greeting, setGreeting] = useState(() => getDashboardGreeting());
   const metrics = {
     totalReviews: reviews.length,
     issues: reviews.reduce((total, review) => total + review.issues.length, 0),
@@ -84,11 +90,31 @@ export function DashboardPage({
     (guideline) => guideline.id === selectedGuidelineId,
   );
 
+  useEffect(() => {
+    let timeoutId: number;
+
+    const updateGreeting = () => {
+      const now = new Date();
+      setGreeting(getDashboardGreeting(now));
+      timeoutId = window.setTimeout(
+        updateGreeting,
+        getMillisecondsUntilGreetingChanges(now),
+      );
+    };
+
+    timeoutId = window.setTimeout(
+      updateGreeting,
+      getMillisecondsUntilGreetingChanges(new Date()),
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
   return (
     <>
       <PageHeader
         eyebrow="Overview"
-        title="Good morning"
+        title={greeting}
         description="A clear view of your brand review workspace. Your team always makes the final call."
       />
 

@@ -6,6 +6,7 @@ test("brand review journey, reviewer decisions, history, and refresh", async ({
   const brandName = `E2E Brand ${Date.now()}`;
   const email = `e2e-${Date.now()}@example.com`;
 
+  await page.clock.install({ time: new Date(2026, 0, 15, 4, 58) });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
@@ -19,7 +20,19 @@ test("brand review journey, reviewer decisions, history, and refresh", async ({
   await page.getByLabel("Password").fill("playwright-test-password");
   await page.getByRole("button", { name: "Sign in" }).click();
 
+  await page.clock.pauseAt(new Date(2026, 0, 15, 4, 59));
+  await expect(page.getByRole("heading", { name: "Good night" })).toBeVisible();
+  await page.clock.runFor(60_000);
   await expect(page.getByRole("heading", { name: "Good morning" })).toBeVisible();
+  await page.clock.runFor(7 * 60 * 60 * 1000);
+  await expect(
+    page.getByRole("heading", { name: "Good afternoon" }),
+  ).toBeVisible();
+  await page.clock.runFor(5 * 60 * 60 * 1000);
+  await expect(page.getByRole("heading", { name: "Good evening" })).toBeVisible();
+  await page.clock.runFor(4 * 60 * 60 * 1000);
+  await expect(page.getByRole("heading", { name: "Good night" })).toBeVisible();
+
   await expect(
     page.getByRole("button", { name: "Content Checker", exact: true }),
   ).toBeVisible();
