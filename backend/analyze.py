@@ -21,6 +21,8 @@ from auth import get_current_user
 load_dotenv(Path(__file__).with_name(".env"))
 logger = logging.getLogger(__name__)
 router = APIRouter()
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 class BrandGuidelinesInput(BaseModel):
@@ -162,27 +164,25 @@ RESPONSE_FORMAT = {
     dependencies=[Depends(get_current_user)],
 )
 async def analyze_content(request: AnalyzeRequest) -> AnalysisResponse:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key or api_key == "replace_with_your_own_key":
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key or api_key == "your_groq_api_key_here":
         raise HTTPException(
             status_code=503,
             detail=(
-                "AI analysis is not configured. Set OPENAI_API_KEY in "
+                "AI analysis is not configured. Set GROQ_API_KEY in "
                 "backend/.env and restart the backend."
             ),
         )
 
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
-    if not model:
-        raise HTTPException(
-            status_code=503,
-            detail="AI analysis is not configured. OPENAI_MODEL cannot be blank.",
-        )
-
     try:
-        async with AsyncOpenAI(api_key=api_key, timeout=30.0, max_retries=0) as client:
+        async with AsyncOpenAI(
+            api_key=api_key,
+            base_url=GROQ_BASE_URL,
+            timeout=30.0,
+            max_retries=0,
+        ) as client:
             completion = await client.chat.completions.create(
-                model=model,
+                model=GROQ_MODEL,
                 temperature=0,
                 response_format=RESPONSE_FORMAT,
                 messages=[
@@ -200,52 +200,52 @@ async def analyze_content(request: AnalyzeRequest) -> AnalysisResponse:
                     },
                 ],
             )
-    except APITimeoutError as error:
-        logger.warning("AI provider request timed out")
+    except APITimeoutError:
+        logger.warning("Groq API request timed out")
         raise HTTPException(
             status_code=504,
-            detail="The AI provider timed out. Please try again.",
-        ) from error
-    except RateLimitError as error:
-        logger.warning("AI provider rate limit reached")
+            detail="Groq timed out. Please try again.",
+        ) from None
+    except RateLimitError:
+        logger.warning("Groq API rate limit reached")
         raise HTTPException(
             status_code=503,
-            detail="The AI provider is temporarily rate-limiting requests. Try again shortly.",
-        ) from error
-    except APIConnectionError as error:
-        logger.exception("Could not connect to AI provider")
+            detail="Groq is temporarily rate-limiting requests. Please retry shortly.",
+        ) from None
+    except APIConnectionError:
+        logger.warning("Could not connect to Groq API")
         raise HTTPException(
             status_code=502,
-            detail="Could not connect to the AI provider. Check the backend network and try again.",
-        ) from error
+            detail="Could not connect to Groq. Check the backend network and try again.",
+        ) from None
     except APIStatusError as error:
-        logger.exception("AI provider returned an error status")
+        logger.warning("Groq API returned HTTP %s", error.status_code)
         raise HTTPException(
             status_code=502,
-            detail="The AI provider returned an error. Check the key, model, and provider status.",
-        ) from error
-    except APIError as error:
-        logger.exception("AI provider request failed")
+            detail="Groq returned an error. Check the key, model, and provider status.",
+        ) from None
+    except APIError:
+        logger.warning("Groq API request failed")
         raise HTTPException(
             status_code=502,
-            detail="The AI provider request failed. Please retry or check backend logs.",
-        ) from error
+            detail="The Groq request failed. Please retry or check backend logs.",
+        ) from None
 
     response_text = completion.choices[0].message.content
     if not response_text:
         raise HTTPException(
             status_code=502,
-            detail="The AI provider returned an empty analysis response.",
+            detail="Groq returned an empty analysis response.",
         )
 
     try:
         analysis = AnalysisResponse.model_validate_json(response_text)
-    except (ValidationError, ValueError) as error:
-        logger.warning("AI provider returned invalid structured analysis")
+    except (ValidationError, ValueError):
+        logger.warning("Groq returned invalid structured analysis")
         raise HTTPException(
             status_code=502,
-            detail="The AI provider returned an invalid analysis response. Please retry.",
-        ) from error
+            detail="Groq returned an invalid analysis response. Please retry.",
+        ) from None
 
     for issue in analysis.issues:
         if issue.exact_text not in request.content:

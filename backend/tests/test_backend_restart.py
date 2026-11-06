@@ -14,7 +14,7 @@ def test_saved_records_survive_backend_restart(tmp_path: Path) -> None:
     environment = {
         **os.environ,
         "BRANDGUARD_DATABASE_PATH": str(database_path),
-        "OPENAI_API_KEY": "",
+        "GROQ_API_KEY": "",
         "JWT_SECRET_KEY": "restart-test-secret-key-that-is-at-least-thirty-two-characters",
         "JWT_ACCESS_TOKEN_EXPIRE_MINUTES": "30",
     }

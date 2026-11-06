@@ -15,7 +15,7 @@ edits, and explicit human review decisions into one small review workflow.
 - Editable brand guideline profiles and an explicitly labelled demo profile.
 - Rule-based checks for restricted/preferred language and a small set of
   absolute-claim patterns.
-- Optional AI analysis via the backend and OpenAI structured JSON output.
+- Optional AI analysis via the backend and Groq structured JSON output.
 - Account registration/login, Argon2 password hashing, signed JWT sessions, and
   per-user brand/review ownership.
 - An estimated compliance score, detected findings, suggested corrections,
@@ -31,7 +31,7 @@ guarantee; reviewers must verify claims and decide what to do.
 - Frontend: React, TypeScript, Vite, Tailwind CSS.
 - Backend: Python, FastAPI, Pydantic, SQLAlchemy.
 - Storage: SQLite.
-- Optional AI: OpenAI API, called only from the backend.
+- Optional AI: Groq API, called only from the backend through its OpenAI-compatible endpoint.
 - Tests: pytest and Playwright.
 
 ## Project structure
@@ -64,7 +64,7 @@ the project root:
 cd backend
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 # Generate a random secret and put it in backend/.env as JWT_SECRET_KEY.
 py -c "import secrets; print(secrets.token_urlsafe(48))"
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
@@ -78,7 +78,7 @@ In a second terminal from the project root, install and start the frontend:
 ```powershell
 cd frontend
 npm install
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 npm run dev
 ```
 
@@ -98,8 +98,8 @@ Use the committed example files as templates: `backend/.env.example` and
 | `BRANDGUARD_DATABASE_PATH` | Backend | SQLite file path; defaults to `backend/brandguard.db`. Its parent directory is created if needed. |
 | `JWT_SECRET_KEY` | Backend only | Random signing secret (at least 32 characters); required before the backend starts. Generate a different value per environment and do not commit it. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Backend only | Access-token lifetime in minutes; defaults to 30 and is limited to 1–10080. |
-| `OPENAI_API_KEY` | Backend only | Optional secret for live AI analysis. Never use a `VITE_` variable for this key. |
-| `OPENAI_MODEL` | Backend only | Optional model name; defaults to `gpt-4o-mini`. |
+| `GROQ_API_KEY` | Backend only | Optional secret for live AI analysis. Never use a `VITE_` variable for this key. |
+| Model | Backend | `openai/gpt-oss-120b`, sent to `https://api.groq.com/openai/v1`. |
 
 Do not put secrets in frontend variables: Vite variables are included in browser
 builds. When `FRONTEND_ORIGINS` is unset, local Vite origins are allowed. When
@@ -127,7 +127,7 @@ tab's token.
 | `GET`, `POST` | `/api/reviews` | List or save reviews. |
 | `GET`, `PUT` | `/api/reviews/{review_id}` | Read or update a review and its human status. |
 | `PUT` | `/api/reviews/{review_id}/suggestions/{issue_id}` | Save a suggestion decision. |
-| `POST` | `/api/analyze` | Run AI analysis; requires authentication and the backend-only OpenAI key. |
+| `POST` | `/api/analyze` | Run AI analysis; requires authentication and the backend-only Groq key. |
 
 ## SQLite persistence
 
@@ -153,11 +153,12 @@ SQLite persistence on Render has not been verified by this project.
    `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`.
 4. Configure `FRONTEND_ORIGINS` with the exact deployed Vercel origin,
    a strong random `JWT_SECRET_KEY`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`,
-   `OPENAI_API_KEY` and `OPENAI_MODEL` if AI is required, and
+   `GROQ_API_KEY` if AI is required, and
    `BRANDGUARD_DATABASE_PATH` if using a mounted persistent disk.
-5. If Render offers access controls for the selected plan, restrict access
-   while this demo has no authentication. Otherwise avoid putting sensitive or
-   personal data in a publicly reachable instance.
+5. Registration is open to anyone who can reach the API. If Render offers
+   access controls for the selected plan, use them to limit account creation
+   and abuse during a public demo. Avoid putting sensitive or personal data in
+   a publicly reachable instance.
 
 ### Vercel frontend
 
@@ -199,7 +200,7 @@ No deployment URLs are provided because this project has not been deployed.
 - CORS only controls browser cross-origin access; it does not authenticate
   callers or prevent direct API requests. Wildcard origins are rejected and
   credentials are disabled.
-- Keep the OpenAI key only in the backend environment. AI provider responses
+- Keep the Groq key only in the backend environment. AI provider responses
   are checked for the expected structure and for quoted text/facts, but still
   require a human to verify.
 - Rule-based analysis is limited to configured terms and a small set of

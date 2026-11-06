@@ -39,7 +39,7 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         BRANDGUARD_DATABASE_PATH: e2eDatabasePath,
-        OPENAI_API_KEY: "",
+        GROQ_API_KEY: "",
         JWT_SECRET_KEY:
           "playwright-test-secret-key-that-is-at-least-thirty-two-characters",
         JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30",
