@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import re
+import unicodedata
 from pathlib import Path
 from typing import Literal
 
@@ -158,6 +160,70 @@ RESPONSE_FORMAT = {
 }
 
 
+def reconcile_issue_quotes(response_text: str, content: str) -> str:
+    response = json.loads(response_text)
+    if not isinstance(response, dict):
+        return response_text
+
+    issues = response.get("issues")
+    if not isinstance(issues, list):
+        return response_text
+
+    verified_issues: list[object] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+
+        provider_quote = issue.get("exact_text")
+        if not isinstance(provider_quote, str) or not provider_quote.strip():
+            continue
+
+        exact_quote = find_exact_quote(provider_quote, content)
+        if exact_quote is not None:
+            verified_issues.append({**issue, "exact_text": exact_quote})
+
+    response["issues"] = verified_issues
+    return json.dumps(response, ensure_ascii=False)
+
+
+def find_exact_quote(provider_quote: str, content: str) -> str | None:
+    if provider_quote in content:
+        return provider_quote
+
+    case_insensitive_match = re.search(
+        re.escape(provider_quote),
+        content,
+        flags=re.IGNORECASE | re.UNICODE,
+    )
+    if case_insensitive_match is not None:
+        return case_insensitive_match.group()
+
+    quote_tokens = list(re.finditer(r"\w+", provider_quote, flags=re.UNICODE))
+    content_tokens = list(re.finditer(r"\w+", content, flags=re.UNICODE))
+    if not quote_tokens or len(quote_tokens) > len(content_tokens):
+        return None
+
+    normalized_quote = [token.group().casefold() for token in quote_tokens]
+    normalized_content = [token.group().casefold() for token in content_tokens]
+    token_count = len(normalized_quote)
+    for start in range(len(normalized_content) - token_count + 1):
+        if normalized_content[start : start + token_count] == normalized_quote:
+            quote_start = content_tokens[start].start()
+            quote_end = content_tokens[start + token_count - 1].end()
+            if _ends_with_punctuation(provider_quote):
+                while quote_end < len(content) and unicodedata.category(
+                    content[quote_end]
+                ).startswith("P"):
+                    quote_end += 1
+            return content[quote_start:quote_end]
+    return None
+
+
+def _ends_with_punctuation(value: str) -> bool:
+    stripped = value.rstrip()
+    return bool(stripped) and unicodedata.category(stripped[-1]).startswith("P")
+
+
 @router.post(
     "/api/analyze",
     response_model=AnalysisResponse,
@@ -239,6 +305,7 @@ async def analyze_content(request: AnalyzeRequest) -> AnalysisResponse:
         )
 
     try:
+        response_text = reconcile_issue_quotes(response_text, request.content)
         analysis = AnalysisResponse.model_validate_json(response_text)
     except (ValidationError, ValueError):
         logger.warning("Groq returned invalid structured analysis")
@@ -246,13 +313,6 @@ async def analyze_content(request: AnalyzeRequest) -> AnalysisResponse:
             status_code=502,
             detail="Groq returned an invalid analysis response. Please retry.",
         ) from None
-
-    for issue in analysis.issues:
-        if issue.exact_text not in request.content:
-            raise HTTPException(
-                status_code=502,
-                detail="The AI provider returned an issue quote that does not match the submitted content.",
-            )
 
     supplied_facts = set(request.guidelines.approved_facts)
     normalized_content = " ".join(request.content.casefold().split())

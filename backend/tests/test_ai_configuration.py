@@ -143,6 +143,84 @@ def test_analysis_maps_groq_rate_limit_to_retryable_error(
     assert "retry" in response.json()["detail"].lower()
 
 
+@pytest.mark.parametrize(
+    ("provider_quote", "expected_quote"),
+    [
+        ("We guarantee great service.", "We guarantee great service."),
+        ("We guarantee great service", "We guarantee great service"),
+        ("We promise exceptional support.", None),
+        ("we GUARANTEE great SERVICE.", "We guarantee great service."),
+        ("We, GUARANTEE great service!", "We guarantee great service."),
+        ("We   guarantee\ngreat service.", "We guarantee great service."),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_analysis_returns_only_exact_original_issue_quotes(
+    api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_quote: str | None,
+    expected_quote: str | None,
+) -> None:
+    import analyze
+
+    content = "We guarantee great service."
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    issue: dict[str, object] = {
+        "category": "Potentially risky claim",
+        "explanation": "Review this wording.",
+        "severity": "high",
+        "suggested_correction": "Use supportable wording.",
+        "requires_human_verification": True,
+    }
+    if provider_quote is not None:
+        issue["exact_text"] = provider_quote
+    provider_response = {
+        "compliance_score": 72,
+        "summary": "Review the claim.",
+        "issues": [issue],
+        "matched_approved_facts": [],
+    }
+
+    class FakeCompletions:
+        async def create(self, **_: object) -> SimpleNamespace:
+            message = SimpleNamespace(content=json.dumps(provider_response))
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeClient:
+        def __init__(self, **_: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr(analyze, "AsyncOpenAI", FakeClient)
+    response = api_client.post(
+        "/api/analyze",
+        json={
+            "title": "Homepage promotion",
+            "content": content,
+            "guidelines": {
+                "brand_name": "Test Brand",
+                "preferred_tone": "Friendly and professional",
+                "target_audience": "Customers",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    returned_issues = response.json()["issues"]
+    if expected_quote is None:
+        assert returned_issues == []
+    else:
+        assert len(returned_issues) == 1
+        assert returned_issues[0]["exact_text"] == expected_quote
+        assert returned_issues[0]["exact_text"] in content
+
+
 def test_analysis_rejects_invalid_input(api_client: TestClient) -> None:
     response = api_client.post(
         "/api/analyze",
